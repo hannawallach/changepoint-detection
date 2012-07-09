@@ -1,0 +1,527 @@
+\documentclass[10pt,english,oneside]{article}
+\usepackage[pdftex]{graphics}
+\usepackage{amsmath,amssymb,rotating,multirow}
+\usepackage{palatino}
+\usepackage{url}
+
+\usepackage{subfigure}
+
+\usepackage{natbib}
+
+\usepackage[plain]{algorithm}
+\usepackage{algpseudocode}
+
+\usepackage{parskip}
+\usepackage{setspace}
+\onehalfspacing
+
+\usepackage{geometry}
+\geometry{verbose,letterpaper}
+
+\setlength{\parskip}{10pt}
+
+\title{Changepoint Detection}
+\author{}
+\date{\today}
+
+\bibliographystyle{apalike}
+
+\input{macros}
+
+\begin{document}
+
+\maketitle
+
+\section{Bayesian Online Changepoint Detection}
+
+A changepoint is an abrupt variation in the parameters of a generative
+model. This note describes the framework of~\citet{adams07bayesian},
+as applied to Bayesian unigram language modeling.
+
+We observe words at $T$ discrete points in time $1 \leq t \leq T$. We
+denote the observation (word) at time $t$ as $x_t$. We denote the
+observations between times $a$ and $b$ inclusive as $\bx_{a:b}$. We
+assume that the observations $\bx_{1:T}$ can be divided into
+non-overlapping runs of contiguous observations. We assume that the
+observations within a single run $\rho$ were drawn independently and
+identically from a probability distribution with parameters
+$\bphi_{\rho}$. We futher assume that the parameters for run $\rho$
+are independent of and identically distributed to the parameters for
+any other run $\rho'$.
+
+The ``run length'' at time $t$, denoted by $0 \leq r_t \leq t-1$, is
+the number of observations in $\bx_{1:t-1}$ that belong to the same
+run as observation $x_t$. We denote this set of observations, i.e.,
+$x_{t-r_t}, \ldots, x_{t-1}$, as $\bx_{t-r_t: t-1}$ for any $r_t$ and
+define $\bx_{t:t-1} \teq \emptyset$. If $r_t \teq 0$ then $x_t$ is the
+first observation in a new run; otherwise $x_t$ is the $(r_t +
+1)^{\textrm{th}}$ observation in the current run. In other words,
+$r_t$ is the length of the current run \emph{after} observation
+$x_{t-1}$ and \emph{before} observation $x_t$. Changepoints therefore
+occur \emph{between} observations: if $r_t \teq 0$, then a changepoint
+occurred between observation $x_{t-1}$ and observation $x_t$.
+
+\begin{algorithm}[t]
+  \caption[]{Generating discrete observations.}
+  \label{alg:generative_process}
+  \begin{algorithmic}[0]
+    \State $C \is \emptyset$
+    \State $\rho \is 0$
+    \For{$t \is 1$ to $T$}
+    \If{$t \teq 1$}
+    \State $r_t \is 0$
+    \Else
+    \If{$U(0,1) < H(r_{t-1}+1)$}
+    \State $r_t \is 0$
+    \Else
+    \State $r_t \is r_{t-1}+1$
+    \EndIf
+    \EndIf
+    \If{$r_t = 0$}
+    \State $C \is C \cup \{ t \}$
+    \State $\rho \is \rho + 1$
+    \State $\bphi_{\rho} \sim \Dir(\bphi_{\rho}; \beta \bn)$
+    \EndIf
+    \State $x_t \sim \bphi_{\rho}$
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\comment{\subsection{Calculating $P(r_t \g \bx_{1:t-1})$}
+
+At every point in time $1 \leq t \leq T$, we are interested in the
+probabilities of all possible run lengths at that point given
+observations $\bx_{1:t-1}$---i.e., $P(r_t \g \bx_{1:t-1})$ for all $0
+\leq r_t \leq t-1$. The probability of $r_t \teq 0$ given observations
+$\bx_{1:t-1}$ is the probability of a changepoint after observation
+$x_{t-1}$ and before observation $x_t$. The most probable run length
+at time $t$ is $\argmax_{0 \leq r_t \leq t-1} P(r_t \g \bx_{1:t-1})$.}
+
+\subsection{Calculating $P(r_t \g \bx_{1:t})$}
+
+For every point in time $1 \leq t \leq T$, we are interested in the
+posterior probabilities of all possible run lengths at that point
+given observations $\bx_{1:t}$---i.e., $P(r_t \g \bx_{1:t})$ for all
+$0 \leq r_t \leq t-1$:
+\begin{align}
+  P(r_t \g \bx_{1:t}) &\propto P(r_t, x_t \g \bx_{1:t-1})\\
+  &= P(x_t \g r_t, \bx_{1:t-1})\,P(r_t \g \bx_{1:t-1}).
+\end{align}
+The posterior probability of $r_t \teq 0$ is the posterior probability
+of a changepoint after observation $x_{t-1}$ and before observation
+$x_t$. The most probable run length is $\argmax_{0 \leq r_t \leq t-1}
+P(r_t \g \bx_{1:t})$.
+
+If we define $P(r_1 \teq 0 \g \bx_{1:0}) = P(r_1 \teq 0 \g \emptyset)
+= P(r_1 \teq 0) = 1$ then we can recursively compute the conditional
+probability of run length $r_t$ given observations $\bx_{1:t-1}$ for
+all $2 \leq t \leq T$ as follows:
+\begin{align}
+  P(r_t \g \bx_{1:t-1})
+  &\propto P(r_t, x_{t-1} \g \bx_{1:t-2})\\
+  &= \sum_{r_{t-1}=0}^{(t-1)-1} P(r_{t-1}, r_t, x_{t-1} \g
+  \bx_{1:t-2})\\
+  &=
+  \sum_{r_{t-1}=0}^{(t-1)-1} \underbrace{P(r_t \g r_{t-1}, x_{t-1},
+  \bx_{1:t-2})}_{{} = P(r_t \g r_{t-1})}\,P(r_{t-1}, x_{t-1} \g
+  \bx_{1:t-2})\\
+  \label{eqn:recursion}
+  &=   \sum_{r_{t-1}=0}^{(t-1)-1} P(r_t \g r_{t-1})\,\underbrace{P(x_{t-1} \g r_{t-1},
+  \bx_{1:t-2})}_{{} = P(x_{t-1} \g \bx_{t-1-r_{t-1}:t-2})}\,P(r_{t-1} \g \bx_{1:t-2})
+\intertext{where}
+\label{eqn:hazard}
+P(r_t \g r_{t-1}) &= \begin{cases} H(r_{t-1}+1) & \textrm{if $r_t
+    \teq 0$}\\
+1 - H(r_{t-1}+1) & \textrm{if $r_t \teq r_{t-1} + 1$}\\
+0 & \textrm{otherwise.}\end{cases}
+\end{align}
+If $1 \leq r_t \leq t-1$ then $r_{t-1}$ must be equal to $r_t -
+1$. Equation~\ref{eqn:recursion} therefore simplifies to
+\begin{equation}
+\label{eqn:simplification}
+  P(r_t \g \bx_{1:t-1}) \propto
+  P(r_t \g r_{t-1} \teq r_t - 1)\,\underbrace{P(x_{t-1} \g
+  r_{t-1} \teq r_t - 1, \bx_{1:t-2})}_{{} = P(x_{t-1} \g
+    \bx_{t-r_t:t-2})}\,P(r_{t-1} \teq r_t - 1 \g
+  \bx_{1:t-2}).
+  \end{equation}
+Combining equations~\ref{eqn:recursion},~\ref{eqn:hazard},
+and~\ref{eqn:simplification} gives
+\begin{align}
+  &P(r_t \g \bx_{1:t-1}) \notag\\
+  &\quad\propto \begin{cases}
+\sum_{r_{t-1}=0}^{(t-1)-1} H(r_{t-1}+1)\,P(x_{t-1} \g
+\bx_{t-1-r_{t-1}:t-2})\,P(r_{t-1} \g
+\bx_{1:t-2}) & \textrm{if $r_t \teq 0$}\\
+    (1-H(r_{t-1}+1 \teq r_t))\, P(x_{t-1} \g
+    \bx_{t-r_t:t-2})\,P(r_{t-1} \teq r_t - 1 \g
+  \bx_{1:t-2}) & \textrm{$1 \leq r_t \leq t-1$.}
+\end{cases}
+  \end{align}
+Pseudocode for calculating $P(r_t \g \bx_{1:t-2})$ for all $1 \leq t
+\leq T$ and $0 \leq r_t \leq t-1$ is given in
+algorithms~\ref{alg:conditional} and~\ref{alg:conditional2}.
+
+\begin{algorithm}[t]
+  \caption[]{$R[r_t, t-1]$ is the conditional probability of run
+    length $r_t$ given observations $\bx_{1:t-1}$. For example,
+    $R[2,3] = P(r_4 \teq 2 \g \bx_{1:3})$ because $t - 1 \teq 3
+    \implies t \teq 4$ and $r_4 \teq 2$. $P[r_{t-1}, t-2]$ is the
+    predictive probability of observation $x_{t-1}$ given observations
+    $\bx_{t-1-r_{t-1}:t-2}$.}
+  \label{alg:conditional}
+  \begin{algorithmic}[0]
+    \State \Comment{Base case (i.e., initialization)...}
+    \Statex
+    \State $R[0,0] \is 1$
+    \Statex
+    \State \Comment{Recursion...}
+    \Statex
+    \For{$t \is 2$ to $T$}
+    \State $R[0,t-1] \is 0$
+    \For{$r_{t-1} \is 0$ to $(t-1)-1$}
+    \State $R[0,t-1] \is R[0,t-1] +
+    H(r_{t-1}+1)\,P[r_{t-1},t-2]\,R[r_{t-1},t-2]$
+    \EndFor
+    \State $Z \is R[0,t-1]$
+    \For{$r_t \is 1$ to $t-1$}
+    \State $R[r_t, t-1] \is (1 - H(r_t))\,P[r_t-1,t-2]\,R[r_t-1, t-2]$
+    \State $Z \is Z + R[r_t,t-1]$
+    \EndFor
+    \Statex
+    \State \Comment{$R[r_t,t-1]$ currently contains $P(r_t,
+      x_{t-1} \g \bx_{1:t-2})$ and $Z$ contains $P(x_{t-1} \g \bx_{1:t-2})$}
+    \Statex
+    \For{$r_t \is 0$ to $t-1$}
+    \State $R[r_t, t-1] \is R[r_t, t-1] \,/\, Z$
+    \EndFor
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+  \caption[]{}
+  \label{alg:conditional2}
+  \begin{algorithmic}[0]
+    \State \Comment{Base case (i.e., initialization)...}
+    \Statex
+    \State $R \is [ 1 ]$
+    \Statex
+    \State \Comment{Recursion...}
+    \Statex
+    \For{$t \is 2$ to $T$}
+    \State $S \is \textrm{zeros}(t)$
+    \For{$r \is 0$ to $(t-1)-1$}
+    \State $S[r+1] \is (1 - H(r+1))\,P[r]\,R[r]$
+    \EndFor
+    \For{$r \is 0$ to $(t-1)-1$}
+    \State $S[0] \is S[0] +
+    H(r+1)\,P[r]\,R[r]$
+    \EndFor
+    \State $R \is S$
+    \State $Z \is \textrm{sum}(S)$
+    \Statex
+    \State \Comment{$R[r_t]$ currently contains $P(r_t,
+      x_{t-1} \g \bx_{1:t-2})$ and $Z$ contains $P(x_{t-1} \g \bx_{1:t-2})$}
+    \Statex
+    \For{$r \is 0$ to $t-1$}
+    \State $R[r] \is R[r] \,/\, Z$
+    \EndFor
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Calculating $P(x_t \g \bx_{t-r_t:t-1})$}
+
+Algorithm~\ref{alg:conditional} requires $P[r_{t-1}, t-2] \equiv
+P(x_{t-1} \g \bx_{t-1-r_{t-1}:t-2})$ for all $1 \leq t \leq T$ and $0
+\leq r_t \leq t-1$.
+
+\comment{
+If $x_t \sim \bphi_{\rho}$ for all $1 \leq t \leq T$ and $\bphi_{\rho}
+\sim \Dir(\bphi_{\rho}; \beta \bn)$ for all $\rho$, as in
+algorithm~\ref{alg:generative_process}, then
+\begin{equation}
+  P(x_t \g
+  \bx_{t-r_t:t-1})
+  = \frac{N_{x_t}^{t-r_t:t-1} + \beta
+    n_{x_t}}{r_t + \beta},
+\end{equation}
+where $N_{x_t}^{t-r_t:t-1}$ is the number of observations in
+$\bx_{t-r_t:t-1}$ with the same value as $x_t$. Letting
+$\bN^{t-r_t:t-1}$ denote the $K$-dimensional vector whose
+$k^{\textrm{th}}$ element is $N_k^{t-r_t:t-1}$, we can recursively
+construct $\bN^{t-r_t:t-1} + \beta \bn$, i.e., the $K$-dimensional
+vector of hyperparameters for the Dirichlet posterior over
+$\bphi_{\rho}$ given the observations $\bx_{t-r_t:t-1}$ and the
+$K$-dimensional vector of hyperparameters $\beta \bn$ for the prior
+over $\bphi_{\rho}$, for all $1 \leq t \leq T$ and $0 \leq r_t \leq
+t-1$ as shown in algorithm~\ref{alg:hyperparameters}. Once the set of
+$T\,(T-1) \,/\, 2 + T$ hyperparameter vectors has been (recursively)
+constructed, we can compute $P(x_t \g r_t, \bx_{1:t-1}) \teq P(x_t \g
+\bx_{t-r_t:t-1}) = N_{x_t}^{t-r_t:t-1} + \beta n_{x_t} \,/\, r_t +
+\beta$ as shown in algorithm~\ref{alg:predictive}.}
+
+\begin{algorithm}[t]
+  \caption[]{$\chi[r_t,t-1]$ is the $K$-dimensional vector of
+    hyperparameters for the Dirichlet posterior over $\bphi_{\rho}$
+    given observations $\bx_{t-r_t:t-1}$ and the $K$-dimensional
+    vector of hyperparameters $\beta \bn$ for the prior over
+    $\bphi_{\rho}$. For example, $\chi[2,3] = \beta \bn + \bzero^{x_2}
+    + \bzero^{x_3}$, where $\bzero^{k}$ is a $K$-dimensional vector
+    whose elements are all zero except for element $k$ which is one,
+    because $t - 1 \teq 3 \implies t \teq 4$ and $r_4 \teq 2$.}
+  \label{alg:hyperparameters}
+  \begin{algorithmic}[0]
+    \State \Comment{Base case (i.e., initialization)...}
+    \Statex
+    \State $\chi[0,0] \is \beta \bn$
+    \State $\nu[0,0] \is \beta$
+    \Statex
+    \State \Comment{Recursion...}
+    \Statex
+    \For{$t \is 2$ to $T$}
+    \State $\chi[0,t-1] \is \beta \bn$
+    \State $\nu[0,t-1] \is \beta$
+    \For{$r_t \is 1$ to $t-1$}
+    \State $\chi[r_t,t-1] \is \chi[r_t-1,t-2] + \bzero^{x_{t-1}}$
+    \State $\nu[r_t,t-1] \is \nu[r_t-1,t-2] + 1$
+    \EndFor
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+  \caption[]{}
+  \label{alg:hyperparameters2}
+  \begin{algorithmic}[0]
+    \State \Comment{Base case (i.e., initialization)...}
+    \Statex
+    \State $\bchi \is [\beta \bn ]$
+    \State $\nu \is [\beta]$
+    \Statex
+    \State \Comment{Recursion...}
+    \Statex
+    \For{$t \is 2$ to $T$}
+    \For{$r \is 0$ to $(t-1)-1$}
+    \State $\bchi[r][x[t-2]] \is
+    \bchi[r][x[t-2]] + 1$
+    \State $\nu[r] \is \nu[r] + 1$
+    \EndFor
+    \State $\bchi.\textrm{prepend}(\beta \bn)$
+    \State $\nu.\textrm{prepend}(\beta)$
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+  \caption[]{$P[r_t,t-1]$ is the predictive probability of observation
+    $x_t$ given observations $\bx_{t-r_t:t-1}$. For example, $P[2,3] =
+    P(x_4 \g \bx_{2:3})$ because $t -1 \teq 3 \implies t \teq 4$ and
+    $r_4 \teq 2$.  $\chi[r_t,t-1]$ is the $K$-dimensional vector of
+    hyperparameters for the Dirichlet posterior over $\bphi_{\rho}$
+    given observations $\bx_{t-r_t:t-1}$ and the $K$-dimensional
+    vector of hyperparameters $\beta \bn$ for the prior over
+    $\bphi_{\rho}$.}
+  \label{alg:predictive}
+  \begin{algorithmic}[0]
+    \For{$t \is 1$ to $T$}
+    \For{$r_t \is 0$ to $t-1$}
+    \State $P[r_t,t-1] \is \chi[r_t,t-1]_{x_t} \,/\, \nu[r_t,t-1]$
+    \EndFor
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+  \caption[]{}
+  \label{alg:predictive2}
+  \begin{algorithmic}[0]
+    \For{$t \is 1$ to $T$}
+    \State $P \is \textrm{zeros}(t)$
+    \For{$r \is 0$ to $t-1$}
+    \State $P[r] \is \bchi[r][x[t-1]] \,/\, \nu[r]$
+    \EndFor
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+  \caption[]{Combining algorithms~\ref{alg:hyperparameters}
+    and~\ref{alg:predictive}.}
+  \begin{algorithmic}[0]
+    \State \Comment{Base case (i.e., initialization)...}
+    \Statex
+    \State $\chi[0,0] \is \beta \bn$
+    \State $\nu[0,0] \is \beta$
+    \State $P[0,0] \is n_{x_1}$
+    \Statex
+    \State \Comment{Recursion...}
+    \Statex
+    \For{$t \is 2$ to $T$}
+    \State $\chi[0,t-1] \is \beta \bn$
+    \State $\nu[0,t-1] \is \beta$
+    \State $P[0,t-1] \is n_{x_t}$
+    \For{$r_t \is 1$ to $t-1$}
+    \State $\chi[r_t,t-1] \is \chi[r_t-1,t-2] + \bzero^{x_{t-1}}$
+    \State $\nu[r_t,t-1] \is \nu[r_t-1,t-2] + 1$
+    \State $P[r_t,t-1] \is \chi[r_t, t-1]_{x_t} \,/\, \nu[r_t,t-1]$
+    \EndFor
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+\caption[]{}
+  \begin{algorithmic}[0]
+    \State \Comment{Base case (i.e., initialization)...}
+    \Statex
+    \State $\bchi \is [ \beta \bn ]$
+    \State $\nu \is [\beta]$
+    \State $P \is [n[x[0]]]$
+    \Statex
+    \State \Comment{Recursion...}
+    \Statex
+    \For{$t \is 2$ to $T$}
+    \State $P \is \textrm{zeros}(t)$
+    \For{$r \is 0$ to $(t-1)-1$}
+    \State $\bchi[r][x[t-2]] \is
+    \bchi[r][x[t-2]] + 1$
+    \State $\nu[r] \is \nu[r] + 1$
+    \State $P[r+1] \is \bchi[r][x[t-1]] \,/\, \nu[r]$
+    \EndFor
+    \State $\bchi.\textrm{prepend}(\beta \bn)$
+    \State $\nu.\textrm{prepend}(\beta)$
+    \State $P[0] \is \bchi[0][x[t-1]] \,/\, \nu[0]$
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+  \caption[]{Combining algorithms~\ref{alg:conditional},
+    \ref{alg:hyperparameters}, and~\ref{alg:predictive}.}
+  \label{alg:inference}
+  \begin{algorithmic}[0]
+    \State \Comment{Base case (i.e., initialization)...}
+    \Statex
+    \State $\chi[0,0] \is \beta \bn$
+    \State $\nu[0,0] \is \beta$
+    \State $P[0,0] \is n_{x_1}$
+    \State $R[0,0] \is 1$
+    \Statex
+    \State \Comment{Recursion...}
+    \Statex
+    \For{$t \is 2$ to $T$}
+    \State $\chi[0,t-1] \is \beta \bn$
+    \State $\nu[0,t-1] \is \beta$
+    \State $P[0,t-1] \is n_{x_t}$
+    \State $R[0,t-1] \is 0$
+    \For{$r_{t-1} \is 0$ to $(t-1)-1$}
+    \State $R[0,t-1] \is R[0,t-1] +
+    H(r_{t-1}+1)\,P[r_{t-1},t-2]\,R[r_{t-1},t-2]$
+    \EndFor
+    \State $Z \is R[0,t-1]$
+    \For{$r_t \is 1$ to $t-1$}
+    \State $\chi[r_t,t-1] \is \chi[r_t-1,t-2] + \bzero^{x_{t-1}}$
+    \State $\nu[r_t,t-1] \is \nu[r_t-1,t-2] + 1$
+    \State $P[r_t,t-1] \is \chi[r_t, t-1]_{x_t} \,/\, \nu[r_t,t-1]$
+    \State $R[r_t, t-1] \is (1 - H(r_t))\,P[r_t-1,t-2]\,R[r_t-1, t-2]$
+    \State $Z \is Z + R[r_t,t-1]$
+    \EndFor
+    \Statex
+    \State \Comment{$R[r_t, t-1]$ currently contains $P(r_t, x_{t-1} \g
+      \bx_{1:t-2})$ and $Z$ contains $P(x_{t-1} \g \bx_{1:t-2})$}
+    \Statex
+    \For{$r_t \is 0$ to $t-1$}
+    \State $R[r_t, t-1] \is R[r_t, t-1] \,/\, Z$
+    \EndFor
+    \Statex
+    \State \Comment{We \emph{actually} want $P(r_t \g \bx_{1:t}) \propto P(r_t, x_t \g
+      \bx_{1:t-1}) = P(x_t \g r_t, \bx_{1:t-1})\,P(r_t \g
+      \bx_{1:t-1})$}
+    \Statex
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+  \caption[]{}
+  \label{alg:inference2}
+  \begin{algorithmic}[0]
+    \State \Comment{Base case (i.e., initialization)...}
+    \Statex
+    \State $\bchi \is [\beta \bn]$
+    \State $\nu \is [ \beta]$
+    \State $P \is [n[x[0]]]$
+    \State $R \is [ 1 ]$
+    \Statex
+    \State \Comment{Recursion...}
+    \Statex
+    \For{$t \is 2$ to $T$}
+    \State $Q \is \textrm{zeros}(t)$
+    \State $S \is \textrm{zeros}(t)$
+    \For{$r \is 0$ to $(t-1)-1$}
+    \State $\bchi[r][x[t-2]] \is \bchi[r][x[t-2]] + 1$
+    \State $\nu[r] \is \nu[r] + 1$
+    \State $Q[r+1] \is \bchi[r][x[t-1]] \,/\, \nu[r]$
+    \State $S[r+1] \is (1 - H(r+1))\,P[r]\,R[r]$
+    \EndFor
+    \State $\bchi.\textrm{prepend}(\beta \bn)$
+    \State $\nu.\textrm{prepend}(\beta)$
+    \State $Q[0] \is \bchi[0][x[t-1]] \,/\, \nu[0]$
+    \For{$r \is 0$ to $(t-1)-1$}
+    \State $S[0] \is S[0] +
+    H(r+1)\,P[r]\,R[r]$
+    \EndFor
+    \State $P \is Q$
+    \State $R \is S$
+    \State $Z \is \textrm{sum}(R)$
+    \Statex
+    \State \Comment{$R[r_t]$ currently contains $P(r_t,
+      x_{t-1} \g \bx_{1:t-2})$ and $Z$ contains $P(x_{t-1} \g \bx_{1:t-2})$}
+    \Statex
+    \For{$r \is 0$ to $t-1$}
+    \State $R[r] \is R[r] \,/\, Z$
+    \EndFor
+    \Statex
+    \State \Comment{We \emph{actually} want $P(r_t \g \bx_{1:t}) \propto P(r_t, x_t \g
+      \bx_{1:t-1}) = P(x_t \g r_t, \bx_{1:t-1})\,P(r_t \g
+      \bx_{1:t-1})$}
+    \Statex
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\section{Notes About Hazard Functions}
+
+The hazard function $H(\tau)$ is defined as
+\begin{equation}
+  H(\tau) = \frac{f(\tau)}{1 - F(\tau)},
+\end{equation}
+where
+$f(\tau)$ is a PDF (and can therefore be greater than one) such that
+\begin{equation}
+  P(a \leq \tau \leq b) = \int_a^b \textrm{d}\tau \, f(\tau)
+\end{equation}
+and $F(\tau)$ is the corresponding CDF, defined as
+\begin{equation}
+  F(\tau) = \int_{-\infty}^{\tau} \textrm{d}x\, f(x).
+\end{equation}
+The hazard function can therefore take on values that are greater than
+one.
+
+To sample a value $\tau$ from $f(\tau)$, note that
+\begin{align}
+  0 \leq F(\tau) = \int_{- \infty}^{\tau} \textrm{d}x \, f(x) \leq 1.
+\end{align}
+Any $u \sim U(0,1)$ therefore corresponds to $F(\tau)$ for some
+$\tau$. Therefore $\tau \teq F^{-1}(u)$. In our case,
+\begin{equation}
+  H(\tau) = \frac{f(\tau)}{1 - F(\tau)} = \lambda.
+\end{equation}
+This corresponds to $f(\tau) \teq \lambda\,\exp{(-\lambda \tau)}$ and
+$F(\tau) \teq 1 - \exp{(-\lambda \tau)}$.
+
+\bibliography{changepoint}
+
+\end{document}
